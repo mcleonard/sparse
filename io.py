@@ -34,7 +34,7 @@ def load_file(filepath, full=False):
                        struct_as_record=False, squeeze_me=True)
     exper = exper['exper_002']
     stimuli = exper.stimulusczar.param.stimuli.value
-    records = [('type', 'S20'), ('stimlength', 'i8'), ('amplitude', 'i8'),
+    records = [('stimulus', 'S20'), ('stimlength', 'i8'), ('amplitude', 'i8'),
                ('duration', 'i8'), ('frequency', 'f8'), ('ramp', 'i8')]
     stims = np.zeros(len(stimuli), dtype = records)
 
