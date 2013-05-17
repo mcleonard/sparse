@@ -6,20 +6,53 @@ def detect_spikes(data, threshold=4):
         Returns a numpy array of sample values at peaks. 
     """
     
-    filtered = butter_filter(data) 
+    filtered = butter_filter(data, high = 4999, rate=10000) 
     peaks = crossings(filtered, medthresh(filtered, threshold))
     peaks = censor(peaks, 30)
-    spikes = extract(data, peaks)
+    spikes, peaks = extract(data, peaks)
     
-    return spikes
+    return spikes, peaks
     
 def detect_triggers(data):
     """ Detects the trigger onsets """
-    
-    triggers = censor(crossings(data, 0.5), width=1000)
+    triggers = censor(crossings(data, threshold=0.5), width=1000)
     _, tr_onsets = extract(data, triggers, patch_size=2)
     
     return tr_onsets
+    
+def build_dframe(spikes, triggers, exper, rate=10000, delay=70):
+    """ Build a pandas DataFrame from the spike peak times, the trigger times,
+        and the experiment records.
+        
+        Arguments
+        ---------
+        spikes : np.array : sample time stamps for each spike
+        triggers : np.array : sample time stamps for each trigger onset
+        exper : np structured array :
+            experiment records, get this from sparse.io.load_data
+        rate : int, float : sampling rate for the data
+        delay : int, float :
+            This is the delay between when the trigger starts and when the stimulus
+            starts.  I've found that on average it is 70 samples with a std of 10
+            samples.  In general, you might want to check this from the data and
+            set it accordingly.
+        
+    """
+    from pandas import Series, DataFrame
+
+    samp_rate = float(rate)
+    
+    times = []
+    for onset in triggers:
+        time_stamp = spikes[((onset + delay - 10000) < spikes) * 
+                           (spikes < (onset + delay + 11000))] - onset - delay
+        times.append(time_stamp)
+    time_stamps = Series(times)/samp_rate
+    
+    data = DataFrame(exper)
+    data['spikes'] = time_stamps
+    
+    return data
 
 def medthresh(data,threshold=4):
     """ A function that calculates the spike crossing threshold 
@@ -44,6 +77,11 @@ def butter_filter(data, low=300, high=6000, rate=30000):
     
     """
     import scipy.signal as sig
+    
+    if high > rate/2.:
+        high = rate/2.-1
+        print("High rolloff frequency can't be greater than the Nyquist \
+               frequency.  Setting high to {}").format(high)
 
     filter_lo = low #Hz
     filter_hi = high #Hz
@@ -58,7 +96,7 @@ def butter_filter(data, low=300, high=6000, rate=30000):
     return sig.filtfilt(b,a,data)
 
 def censor(data, width=30):
-    """ This is used to insert a censored period in the found crossings.
+    """ This is used to insert a censored period in found threshold crossings.
         For instance, when you find a crossing in the signal, you don't
         want the next 0.5-1 ms, you just want the first crossing.
         
@@ -68,6 +106,7 @@ def censor(data, width=30):
         width : int : number of samples censored after a first crossing
     """
     edges = [data[0]]
+    
     for sample in data:
         if sample > edges[-1] + width:
             edges.append(sample)
