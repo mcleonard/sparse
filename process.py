@@ -1,9 +1,18 @@
 import numpy as np
 
+def process_data(ephys, exper):
+    """ Takes the electrical recordings and experiment protocol and returns
+        the spike times and stimulus information.  Spike times are locked to
+        the onset for each stimulus.
+    """
+    _, peaks = detect_spikes(ephys['signal'])
+    triggers = detect_triggers(ephys['trigger'])
+    data = build_dframe(peaks, triggers, exper)
+
+    return data
+
 def detect_spikes(data, threshold=4):
-    """ Detect spikes in data.  
-    
-        Returns a numpy array of sample values at peaks. 
+    """ Detect spikes in data.  Returns spike waveform patches and peak samples. 
     """
     
     filtered = butter_filter(data, high = 4999, rate=10000) 
@@ -30,29 +39,32 @@ def build_dframe(spikes, triggers, exper, rate=10000, delay=70):
         triggers : np.array : sample time stamps for each trigger onset
         exper : np structured array :
             experiment records, get this from sparse.io.load_data
-        rate : int, float : sampling rate for the data
+        rate : int, float : sampling rate for the data, in samples per second
         delay : int, float :
-            This is the delay between when the trigger starts and when the stimulus
-            starts.  I've found that on average it is 70 samples with a std of 10
-            samples.  In general, you might want to check this from the data and
-            set it accordingly.
+            This is the delay between when the trigger starts and when the 
+            stimulus starts.  I've found that on average it is 70 samples with 
+            a std of 10 samples.  In general, you might want to check this from
+            the data and set it accordingly.
         
     """
     from pandas import Series, DataFrame
 
     samp_rate = float(rate)
     
-    times = []
-    for onset in triggers:
-        time_stamp = spikes[((onset + delay - 10000) < spikes) * 
-                           (spikes < (onset + delay + 11000))] - onset - delay
-        times.append(time_stamp)
+    times = [ lock_spikes(spikes, onset, delay) for onset in triggers ]
     time_stamps = Series(times)/samp_rate
     
     data = DataFrame(exper)
     data['spikes'] = time_stamps
-    
     return data
+    
+def lock_spikes(spikes, onset, delay):
+    """ Locks spike times to onset, returns the timelocked time stamps.
+    """
+    low_cutoff = (onset + delay - 10000) < spikes
+    high_cutoff = spikes < (onset + delay + 11000)
+    time_stamps = spikes[low_cutoff * high_cutoff] - onset - delay
+    return time_stamps
 
 def medthresh(data,threshold=4):
     """ A function that calculates the spike crossing threshold 
